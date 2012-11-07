@@ -10,6 +10,7 @@
 the Philippines ... that is similar to hash."
 - http://en.wikipedia.org/wiki/Picadillo
 
+
 INTRODUCTION
 ------------
 The idea is simple: Track collisions of hash values (NOT buckets) in a hashtable
@@ -21,24 +22,37 @@ the order of a couple of instructions) than an actual key comparison, which
 might involve comparison of variable length strings, or more complex objects.
 
 However, as explained below, it requires "perfect collision awareness," which 
-means if unexpected keys are searched, lookups can give *false* results! Thus it
-has a somewhat narrow applicability.
+means if unexpected or arbitrary keys are searched, lookups can give *false* 
+results! This means that correct lookups are only guaranteed for keys that have
+been inserted previously. Thus it has a somewhat narrow applicability compared 
+to conventional hashtables, but I can still think of several usecases.
+
+This is an absurdly simple micro-optimization with a pretty big limitation (keys
+being lookuped must have been previously inserted, else usage is very unsafe), 
+yet in various JIT/VM and interpreted environments, it gives between a 5 and 30%
+improvement in lookup times!
+
 
 DETAILS
 -------
-The problem here is that we cannot rely on only hash comparisons in the default 
-case. If we could get away with only hash comparisons, we would, but collisions 
-are an unfortunate reality that we must deal with. There is always a small but 
-non-zero chance that a hash collision would occur. The larger the hash size and
-better the hash function, the smaller this chance, but never does it reach zero.
+The problem here is that we cannot rely on only hash comparisons for lookups in 
+the default case. If we could get away with only hash comparisons, we would, but
+collisions are an unfortunate and inevitable reality that we must deal with. 
+There is always a small but non-zero chance that a hash collision would occur. 
+The larger the hash size and better the hash function, the smaller this chance, 
+but never does it reach zero.
+
 If we ignored this chance and relied only only on hash comparisons, everything 
-would be fast and hunky-dory… until a hash collision inevitably occurs. And when
-it does, depending on the application using it, the failure could be 
+would be fast and hunky-dory -- until a hash collision inevitably occurs. And 
+when it does, depending on the application using it, the failure could be 
 catastrophic.
 
 Hence, every lookup necessarily involves at least one key comparison (unless the
 corresponding bucket is empty), and may involve many more if bucket collisions
-have occurred (e.g. when traversing the bucket chain or linear probing.)
+have occurred (e.g. when traversing the bucket chain or linear probing.) This 
+cost can add up fast if the keys are custom objects or composite objects (such 
+as arrays, lists or other data structures) that have complicated or expensive 
+comparison semantics.
 
 The (micro)optimization here is to replace the key comparison with hash value 
 comparisons as often as possible, by:
@@ -62,6 +76,7 @@ a much faster hash value comparison.
 Note that it is possible (although unlikely) that more than 2 keys could have 
 the same hash value. In this case, it is probably better to track the count
 of colliding buckets rather than just using binary flag for buckets.
+
 
 VERY IMPORTANT CAVEAT!!!
 ------------------------
@@ -99,7 +114,7 @@ values themselves, e.g. integer keys.
 There is potentially little improvement to be gained, given that many keys 
 differ immediately at the first (or in the first few) characters, and hence the
 CPU cost difference may be negigible compared to integer or hash comparison.
-However initial tests with Java reveal a consistent 5 - 10% improvement in 
+However initial tests with Java reveal a consistent 10 - 30% improvement in 
 lookup times with 0 - 5% improvement in insert and delete times. Memory overhead
 is very low, possibly on the order of a byte (to store collision counts) to a 
 bit (to store collision flags.)
@@ -109,17 +124,17 @@ every insert, and re-evaluated at every remove operation. As such, there is some
 small CPU overhead. As collision counts must be tracked, so there is also a 
 small memory overhead per bucket.
 
-TEST RESULTS
-------------
+
+BENCHMARK RESULTS
+-----------------
 Preliminary tests comparing a Java implementation of collision-tracking based on
 HashMap with java.util.HashMap reveal a 5% - 30% improvement in lookup and 
 remove times, with negligible impact or 5% improvement in insert times.
 Similar results are achieved on .NET/Mono, comparing a PCADLO version of 
 Dictionary with the built-in System.Collections.Dictionary in the Mono standard
-library.
-
-NOTE: As with all benchmarks, this should be run on a machine with minimal other
-applications and services running, since those wildly throw the results off.
+library; Similar results were also achieved for CPython 3.2.3, where the PCADLO
+hashtable was introduced as a custom built-in type and benchmarked against the
+dict built-in type.
 
 This advantage is consistent across various kinds of keys, including:
 1) randomly generated strings of size between 8 and 128 bytes;
@@ -128,26 +143,41 @@ This advantage is consistent across various kinds of keys, including:
 4) randomly generated strings of 8 - 128 characters with a 4 - 8 character 
    common prefix (to test longer string comparison times.)
 
+NOTE: As with all benchmarks, this should be run on a machine with minimal other
+applications and services running, since those wildly throw the results off.
+Furthermore, most benchmarks to measure insert times are swamped by the 
+latencies involved in allocating new memory and re-hashing hashtables on resize,
+so an accurate measure is not available. But logically it makes sense that there
+should be minimal change, since we are only negligible increasing the amount of
+work done during inserts.
+
 For randomly generated keys, colliding strings differ at the first character 
 itself with fairly high probability, indicating the key string comparison should
 return very fast. Yet the speed advantage persists, indicating that comparing 
 integers is still much faster than string comparison. Furthermore, in 
 experiments, the larger the key string, the greater the speed improvement.
 
-(A fairly exact probability can be easily determined based on the number of 
+(A fairly accurate probability can be easily determined based on the number of 
 alphabets in the keys; keys are alphanumeric with uppercase and lower case 
-allowed; hence probability of comparison ending at the first character of the 
-key is 1/62 ~= 0.12%. Probability of ending at Nth char is 1/(62^N))
+allowed; hence probability of comparison continuing past the first character 
+(i.e. a mismatch not occuring at the first character) of the key is 1/62 = 1.6%.
+Probability of comparison continuing upto the Nth char is 1/(62^N)).
 
-In Java/.NET, this may be due to the two main reasons:
+In Java/.NET/CPython, this may be due to the two main reasons:
 1) Mainly, the cache-miss latency incurred in loading the key object from main
-memory for comparison. In Java, the key is stored separately in memory, and the
-hashtable bucket only holds a pointer to it. Key comparisons require 
-de-referencing the pointer, which is an extra indirection that potentially 
-frequently incurs a cache miss and corresponding cache line load from RAM.
-2) The implementation of String#equals, which also performs a pointer-
-comparison, a string length comparison, and an object type (instanceof) 
-comparison before actually comparing the characters.
+memory for comparison. In Java, .NET and CPython, the key object is stored 
+separately from the hashtable bucket object in memory, and the bucket only holds
+a pointer to the key. Hence, key comparisons require de-referencing the pointer,
+which is an extra indirection that potentially frequently incurs a cache miss 
+and corresponding cache line load from RAM.
+2) The implementation of String#equals, which typically also performs a pointer-
+comparison, a string length comparison, and often an object type (instanceof) 
+comparison before actually comparing the characters. Note that in CPython, there
+is a special method for unicode string keys (lookdict_unicode) that is 
+optimistically used by default, which uses a unicode key comparison method 
+(unicode_eq) until the first time a non-unicode key object is detected. However,
+this still does not get rid of the object type check (PyUnicode_CheckExact) at
+every lookup.
 
 In C++ (Sparsehash's "dense hashtable"), due to the use of templates, the key 
 object is stored within the bucket itself. Hence it is inevitably loaded into 
@@ -158,28 +188,17 @@ storage of the hash value and the collision count incur extra memory costs on a
 per-bucket basis, which become non-trivial for very large hashtables. For this 
 reason, applying PCADLO may be unadvisable for C++.
 
-In the Python C implementation of the dict() built-in type, the bucket again 
+In the CPython C implementation of the dict() built-in type, the bucket again 
 stores a pointer to the Python object holding the key object, and hence key
-comparisons should incur a cache miss penalty. However, again tests with a 
-PCADLO implementation of dict revealed no or minor performance improvements. I'm
-not sure why there is no bigger difference; my best guess is either (1) the 
-Python interpreter does all the dict operations within the C runtime, which 
-incurs less memory overhead; or conversely, (2) it incurs so much overhead that
-cache misses for any operation is unavoidable, and all that latency over-whelms
-any minor speedups due to PCADLO.
+comparisons should incur a cache miss penalty. However, preliminary tests with a
+PCADLO implementation of dict revealed only minor performance improvements (on 
+the order of 3 - 5%). I was unable to explain why there wasn't a bigger 
+difference, until I noticed I was making calls to a random number generator in
+each pass of the critical loop being timed, and the processing time of the RNG
+dwarfed the time attributable to the retrieve operation. Moving the RNG calls 
+out of the timed loop and replacing it with a lookup in a pre-generated list of
+random numbers suddenly brought performance numbers in line with those for Java
+and .NET.
 
-Note that the explanation of cache-latency as the main reason for performance
-improvement in Java is based on comparison with the C++ tests.
-
-* Alternate acronyms considered (before I discovered picadillo was "similar to
-hash"):
-- ICHOR: Insert-Constrained Hash-check Optimized Retrieval in Hashtables
-- CTIKL: Collision Tracking Intra-Insert Keyspace Lookup Hashtables
-- CAIKL; Collision-Aware Intra-Insert Keyspace Lookup Hashtables
-- CTIKL: Collision Tracking Insert-Constrained Keyspace Lookup Hashtables
-- PCALO: Perfect Collision Awareness-based Lookup (Micro)Optimization Hashtable
-- PCAHLO: Perfect Collision Awareness-based Hash Lookup (Micro)Optimization
-Tags: Insert-constrained Lookups (ICL), Intra-insert Keyspace Lookups 
-(IKL/IIKL), Collision-Aware (CA), Collision Tracking (CT), Hash-check Only
-(HCO/HO), Micro-optimization(MO).
-
+Note that the hypothesis of cache-latency being the main reason for performance
+improvement in Java, .NET and CPython is based on comparison with the C++ tests.
