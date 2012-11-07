@@ -3649,7 +3649,7 @@ diff -upN --exclude=.DS_Store --exclude='*.o' --exclude='*.exe' --exclude='*.a' 
 +            print("                  sequential numbers as keys. The latter generates random alphanumeric keys. This can have") 
 +            print("                  a significant impact on key comparison times, which unfairly can make PCADLO compare more")
 +            print("                  favorably, as it optimizes by avoiding key comparison where possible. [Default='rng']")
-+            print("Example: ./python.exe ./testpcadlo.py 2321 10K 1K get str rng\n")
++            print("Example: ./python.exe ./testpcadlo.py 2321 10K 1K get str rng \n")
 +            sys.exit(0)
 +
 +    timeit_run()
