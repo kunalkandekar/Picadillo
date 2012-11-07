@@ -1,8 +1,8 @@
 //By Kunal Kandekar, 2012
 //Adapted from Mono implementation of Dictionary.cs
 //https://github.com/mono/mono/blob/master/mcs/class/corlib/System.Collections.Generic/Dictionary.cs
-//This is purely for a more accurate comparison with Mono's standard Dictionary
-//and not for infringement purposes :-P
+//This is purely for a more accurate comparison with Mono's standard Dictionary for research purposes,
+//so it should qualify under fair use, and should not constitute infringement. :-P
 
 using System;
 using System.Collections;
