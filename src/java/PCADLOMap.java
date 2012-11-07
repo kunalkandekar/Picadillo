@@ -1,7 +1,8 @@
 //Author: Kunal Kandekar
 //Adapted from Sun's java.util.HashMap implementation in JDK 1.6 or later.
-//This is purely for a more accurate comparison with Java's standard HashMap
-//and not for infringement purposes. Please don't sue me Oracle! :-P
+//This is purely for a more accurate comparison with Java's standard HashMap for research purposes,
+//so it should qualify under fair use, and should not constitute infringement. 
+//Please don't sue me Oracle! :-P
 
 import java.util.*;
 import java.io.*;
