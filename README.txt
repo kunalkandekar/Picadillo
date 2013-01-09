@@ -13,13 +13,20 @@ the Philippines ... that is similar to hash."
 
 INTRODUCTION
 ------------
-The idea is simple: Track collisions of hash values (NOT buckets) in a hashtable
-(does not matter if open addressing or closed), and  during lookups (whether for
-retrieving or removing) only compare the *hash values* and avoid comparing 
-the actual keys *unless* a hash collision is detected. Since a hash value is a 
-small, fixed size (usually 4 or 8 bytes), a hash comparison is much faster (on 
-the order of a couple of instructions) than an actual key comparison, which 
-might involve comparison of variable length strings, or more complex objects.
+The idea is simple: Track collisions of hash values (*NOT* buckets) in a 
+hashtable, and  during lookups, only compare the *hash values* and avoid 
+comparing the actual keys *unless* a hash collision has been detected. Since a 
+hash value is a small, fixed size (usually 4 or 8 bytes), a hash comparison is 
+much faster (on the order of a couple of instructions) than an actual key 
+comparison, which might involve comparison of variable length strings, or more 
+complex objects. More importantly, and less obviously, avoiding a direct key 
+comparison also avoids referencing the key object in memory, which reduces the 
+need to load it from memory into the CPU caches, thus reducing effective memory,
+as well as making more efficient usage of the cache, and hence the number of 
+cache misses and loads.
+
+The idea applies regardless of whether the hashtable uses open addressing or 
+closed, and applies to all lookups, either for retrieving or removing.
 
 However, as explained below, it requires "perfect collision awareness," which 
 means if unexpected or arbitrary keys are searched, lookups can give *false* 
@@ -37,22 +44,25 @@ DETAILS
 -------
 The problem here is that we cannot rely on only hash comparisons for lookups in 
 the default case. If we could get away with only hash comparisons, we would, but
-collisions are an unfortunate and inevitable reality that we must deal with. 
-There is always a small but non-zero chance that a hash collision would occur. 
-The larger the hash size and better the hash function, the smaller this chance, 
-but never does it reach zero.
+collisions are an unfortunate and inevitable reality that we must deal with. No
+matter how good the hash function, there is always a small but non-zero chance 
+that a hash collision will occur. The larger the hash size and better the hash 
+function, the smaller this probability, but never does it reach zero.
 
-If we ignored this chance and relied only only on hash comparisons, everything 
-would be fast and hunky-dory -- until a hash collision inevitably occurs. And 
-when it does, depending on the application using it, the failure could be 
-catastrophic.
+If we ignored this probability and relied only only on hash comparisons, 
+everything would be fast and hunky-dory -- until a hash collision inevitably 
+occurs. And when it does, depending on the application using it, the failure 
+could be catastrophic.
 
-Hence, every lookup necessarily involves at least one key comparison (unless the
-corresponding bucket is empty), and may involve many more if bucket collisions
-have occurred (e.g. when traversing the bucket chain or linear probing.) This 
-cost can add up fast if the keys are custom objects or composite objects (such 
-as arrays, lists or other data structures) that have complicated or expensive 
-comparison semantics.
+Hence, in conventional hashtables, every lookup necessarily involves at least 
+one key comparison (unless the corresponding bucket is empty), and may involve 
+many more if bucket collisions have occurred (e.g. when traversing the bucket 
+chain or linear probing.) This cost can add up fast if the keys are custom 
+objects or composite objects (such as arrays, lists or other data structures) 
+that have complicated or expensive comparison semantics. Significant costs may 
+be incurred even for string keys if the strings have long common prefixes and
+differ only in a few bytes, necessitating a comparison of the entire string upto
+the first byte that differs.
 
 The (micro)optimization here is to replace the key comparison with hash value 
 comparisons as often as possible, by:
@@ -75,18 +85,23 @@ a much faster hash value comparison.
 
 Note that it is possible (although unlikely) that more than 2 keys could have 
 the same hash value. In this case, it is probably better to track the count
-of colliding buckets rather than just using binary flag for buckets.
+of colliding buckets rather than just using binary flag for buckets. This is the
+approach I used in the reference implementations.
 
 
 VERY IMPORTANT CAVEAT!!!
 ------------------------
 The MAJOR disadvantage is, this depends on *Perfect Collision Awareness* (PCA).
 Meaning, we need to know of all possible collisions between keys that have been
-inserted and keys that will be looked up, INCLUDING KEYS THAT HAVE NOT BEEN 
-INSERTED BUT WILL BE LOOKED UP. Without PCA, there is a very good chance that
+inserted and keys that will be looked up, *INCLUDING KEYS THAT HAVE NOT BEEN 
+INSERTED BUT WILL BE LOOKED UP*. Without PCA, there is a very good chance that
 the map may return a value for a key that has not been inserted (or the PCADLO 
-hashtable is otherwise unaware of) if a collision occurs between an inserted key
-and a lookup key that does not exist in the hashtable. 
+hashtable is otherwise unaware of) if a hash collision occurs between an 
+inserted key and a lookup key that does not exist in the hashtable. 
+
+The benchmark code for the Java reference implementation has a method 
+demonstrating such a case, which is very likely using the default hashing for 
+Strings.
 
 This is because we only compare hash values for buckets that have had no 
 collisions, if a lookup is made for a key that has NOT been inserted but whose 
