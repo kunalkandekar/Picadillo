@@ -21,9 +21,9 @@ much faster (on the order of a couple of instructions) than an actual key
 comparison, which might involve comparison of variable length strings, or more 
 complex objects. More importantly, and less obviously, avoiding a direct key 
 comparison also avoids referencing the key object in memory, which reduces the 
-need to load it from memory into the CPU caches, thus reducing effective memory,
-as well as making more efficient usage of the cache, and hence the number of 
-cache misses and loads.
+need to load it from memory into the CPU registers (via the CPU caches.) This 
+reduces the effective memory used and makes more efficient usage of the memory 
+as well as the CPU cache, reducing the number of cache misses and loads.
 
 The idea applies regardless of whether the hashtable uses open addressing or 
 closed, and applies to all lookups, either for retrieving or removing.
